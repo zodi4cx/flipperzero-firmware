@@ -115,6 +115,8 @@ static const char ducky_cmd_altchar[] = {"ALTCHAR "};
 static const char ducky_cmd_altstr_1[] = {"ALTSTRING "};
 static const char ducky_cmd_altstr_2[] = {"ALTCODE "};
 
+static const char ducky_cmd_wait_caps_on[] = {"WAIT_FOR_CAPS_ON"};
+
 static const uint8_t numpad_keys[10] = {
     HID_KEYPAD_0,
     HID_KEYPAD_1,
@@ -231,6 +233,18 @@ static uint16_t ducky_get_keycode(const char* param, bool accept_chars) {
     return 0;
 }
 
+static void ducky_wait_for_lock(enum HidKeyboardLeds hid_code, bool state) {
+    while(1) {
+        uint8_t led_state = furi_hal_hid_get_led_state();
+        uint8_t current_state = led_state & hid_code;
+        if((current_state > 0 && state) || (current_state == 0 && !state)) {
+            return;
+        }
+        furi_thread_flags_wait(
+            WorkerEvtEnd | WorkerEvtToggle | WorkerEvtDisconnect, FuriFlagWaitAny, 10);
+    }
+}
+
 static int32_t
     ducky_parse_line(BadUsbScript* bad_usb, FuriString* line, char* error, size_t error_len) {
     uint32_t line_len = furi_string_size(line);
@@ -315,6 +329,10 @@ static int32_t
         furi_hal_hid_kb_press(KEY_MOD_LEFT_ALT | HID_KEYBOARD_PRINT_SCREEN);
         furi_hal_hid_kb_press(key);
         furi_hal_hid_kb_release_all();
+        return (0);
+    } else if(strncmp(line_tmp, ducky_cmd_wait_caps_on, strlen(ducky_cmd_wait_caps_on)) == 0) {
+        // WAIT_FOR_CAPS_ON
+        ducky_wait_for_lock(HID_KB_LED_CAPS, true);
         return (0);
     } else {
         // Special keys + modifiers
