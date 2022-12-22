@@ -37,6 +37,7 @@ struct BadUsbScript {
 
     FuriString* line_prev;
     uint32_t repeat_cnt;
+    uint8_t saved_lock;
 };
 
 typedef struct {
@@ -116,6 +117,8 @@ static const char ducky_cmd_altstr_1[] = {"ALTSTRING "};
 static const char ducky_cmd_altstr_2[] = {"ALTCODE "};
 
 static const char ducky_cmd_wait_caps_on[] = {"WAIT_FOR_CAPS_ON"};
+static const char ducky_cmd_save_lock[] = {"SAVE_HOST_KEYBOARD_LOCK_STATE"};
+static const char ducky_cmd_restore_lock[] = {"RESTORE_HOST_KEYBOARD_LOCK_STATE"};
 
 static const uint8_t numpad_keys[10] = {
     HID_KEYPAD_0,
@@ -245,6 +248,18 @@ static void ducky_wait_for_lock(enum HidKeyboardLeds hid_code, bool state) {
     }
 }
 
+static uint16_t ducky_map_lock_to_key(enum HidKeyboardLeds hid_code) {
+    switch (hid_code) {
+        case HID_KB_LED_NUM:
+            return HID_KEYPAD_NUMLOCK;
+        case HID_KB_LED_CAPS:
+            return HID_KEYBOARD_CAPS_LOCK;
+        case HID_KB_LED_SCROLL:
+            return HID_KEYBOARD_SCROLL_LOCK;
+    }
+    return -1;
+}
+
 static int32_t
     ducky_parse_line(BadUsbScript* bad_usb, FuriString* line, char* error, size_t error_len) {
     uint32_t line_len = furi_string_size(line);
@@ -333,6 +348,20 @@ static int32_t
     } else if(strncmp(line_tmp, ducky_cmd_wait_caps_on, strlen(ducky_cmd_wait_caps_on)) == 0) {
         // WAIT_FOR_CAPS_ON
         ducky_wait_for_lock(HID_KB_LED_CAPS, true);
+        return (0);
+    } else if(strncmp(line_tmp, ducky_cmd_save_lock, strlen(ducky_cmd_save_lock)) == 0) {
+        // SAVE_HOST_KEYBOARD_LOCK_STATE
+        bad_usb->saved_lock = furi_hal_hid_get_led_state();
+        return (0);
+    } else if(strncmp(line_tmp, ducky_cmd_restore_lock, strlen(ducky_cmd_restore_lock)) == 0) {
+        // RESTORE_HOST_KEYBOARD_LOCK_STATE
+        uint8_t led_changes = furi_hal_hid_get_led_state() ^ bad_usb->saved_lock;
+        for (HidKeyboardLeds current_led = 0) {
+            if (led_changes & HID_KB_LED_CAPS > 0) {
+                furi_hal_hid_kb_press(HID_KEYBOARD_LOCK_NUM_LOCK);
+                furi_hal_hid_kb_release(HID_KEYBOARD_LOCK_NUM_LOCK); 
+            }
+        }
         return (0);
     } else {
         // Special keys + modifiers
